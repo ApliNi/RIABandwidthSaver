@@ -77,13 +77,13 @@ public final class RIABandwidthSaver extends JavaPlugin implements Listener {
     }
 
     private void playerEcoEnable(Player player) {
-        player.sendMessage(ChatColor.GREEN + "🍃 ECO 节能模式已对您启用，游戏世界更新可能会延迟。");
+        player.sendMessage(ChatColor.GREEN + "🍃 ECO 节能模式已启用，游戏世界更新可能会延迟。");
         player.setSendViewDistance(2);
         AFK_PLAYERS.add(player.getUniqueId());
     }
 
     private void playerEcoDisable(Player player) {
-        player.sendMessage(ChatColor.DARK_GRAY + "🍃 ECO 节能模式已关闭。如果出现游戏世界不同步问题，切换服务器或重新登陆即可解决。");
+        player.sendMessage(ChatColor.DARK_GRAY + "🍃 ECO 节能模式已停用。");
         player.setSendViewDistance(-1);
         player.resetPlayerTime();
         AFK_PLAYERS.remove(player.getUniqueId());
