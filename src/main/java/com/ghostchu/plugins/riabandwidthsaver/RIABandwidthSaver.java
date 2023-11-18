@@ -4,9 +4,10 @@ import com.Zrips.CMI.events.CMIAfkEnterEvent;
 import com.Zrips.CMI.events.CMIAfkLeaveEvent;
 import com.comphenix.protocol.PacketType;
 import com.comphenix.protocol.ProtocolLibrary;
-import com.comphenix.protocol.events.ListenerPriority;
-import com.comphenix.protocol.events.PacketAdapter;
-import com.comphenix.protocol.events.PacketEvent;
+import com.comphenix.protocol.events.*;
+import com.comphenix.protocol.injector.temporary.TemporaryPlayer;
+import io.netty.buffer.ByteBuf;
+import io.netty.util.ReferenceCountUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
@@ -20,45 +21,105 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public final class RIABandwidthSaver extends JavaPlugin implements Listener {
 
     private Set<UUID> AFK_PLAYERS = new HashSet<>();
-    private Map<PacketType, PacketInfo> PKT_TYPE_STATS = new HashMap<>();
-    private Map<UUID, PacketInfo> PLAYER_PKT_SAVED_STATS = new HashMap<>();
+    private Map<PacketType, PacketInfo> PKT_TYPE_STATS = new ConcurrentHashMap<>();
+    private Map<UUID, PacketInfo> PLAYER_PKT_SAVED_STATS = new ConcurrentHashMap<>();
+
+    private Map<PacketType, PacketInfo> UNFILTERED_PKT_TYPE_STATS = new ConcurrentHashMap<>();
+    private Map<UUID, PacketInfo> UNFILTERED_PLAYER_PKT_SAVED_STATS = new ConcurrentHashMap<>();
     private final ThreadLocalRandom RANDOM = ThreadLocalRandom.current();
+    private boolean calcAllPackets = false;
 
     @Override
     public void onEnable() {
         // Plugin startup logic
         saveDefaultConfig();
         Bukkit.getPluginManager().registerEvents(this, this);
+        reloadConfig();
+    }
+
+    @Override
+    public void reloadConfig() {
+        super.reloadConfig();
+        this.calcAllPackets = getConfig().getBoolean("calcAllPackets", true);
+        ProtocolLibrary.getProtocolManager().removePacketListeners(this);
         initProtocolLib();
     }
 
     private void initProtocolLib() {
+        if (calcAllPackets) {
+            List<PacketType> types = new ArrayList<>();
+            for (PacketType value : PacketType.values()) {
+                if (value.isServer() && value.isSupported()) {
+                    types.add(value);
+                }
+            }
+            ProtocolLibrary.getProtocolManager().addPacketListener(new PacketAdapter(
+                    this,
+                    ListenerPriority.MONITOR,
+                    types, ListenerOptions.ASYNC) {
+                @Override
+                public void onPacketSending(PacketEvent event) {
+                    long packetSize = getPacketSize(event.getPacket());
+                    UNFILTERED_PKT_TYPE_STATS.compute(event.getPacketType(), (k, v) -> {
+                        if (v == null) {
+                            v = new PacketInfo();
+                        }
+                        v.getPktCounter().increment();
+                        v.getPktSize().add(packetSize);
+                        return v;
+                    });
+                    if (!(event.getPlayer() instanceof TemporaryPlayer)) {
+                        UNFILTERED_PLAYER_PKT_SAVED_STATS.compute(event.getPlayer().getUniqueId(), (k, v) -> {
+                            if (v == null) {
+                                v = new PacketInfo();
+                            }
+                            v.getPktCounter().increment();
+                            v.getPktSize().add(packetSize);
+                            return v;
+                        });
+                    }
+                }
+            });
+        } else {
+            UNFILTERED_PLAYER_PKT_SAVED_STATS.clear();
+            UNFILTERED_PKT_TYPE_STATS.clear();
+        }
         ProtocolLibrary.getProtocolManager().addPacketListener(new PacketAdapter(
                 this,
                 ListenerPriority.HIGHEST,
-                PacketType.Play.Server.ANIMATION,
-                PacketType.Play.Server.BLOCK_BREAK_ANIMATION,
-                PacketType.Play.Server.ENTITY_SOUND,
-                PacketType.Play.Server.NAMED_SOUND_EFFECT,
-                PacketType.Play.Server.WORLD_PARTICLES,
-                PacketType.Play.Server.EXPLOSION,
-                PacketType.Play.Server.UPDATE_TIME,
-                PacketType.Play.Server.ENTITY_HEAD_ROTATION,
-                PacketType.Play.Server.HURT_ANIMATION,
-                PacketType.Play.Server.DAMAGE_EVENT,
-                PacketType.Play.Server.ENTITY_LOOK,
-                PacketType.Play.Server.REL_ENTITY_MOVE,
-                PacketType.Play.Server.REL_ENTITY_MOVE_LOOK,
-                PacketType.Play.Server.SPAWN_ENTITY_EXPERIENCE_ORB,
-                PacketType.Play.Server.VEHICLE_MOVE,
-                PacketType.Play.Server.BLOCK_ACTION,
-                PacketType.Play.Server.LIGHT_UPDATE,
-                PacketType.Play.Server.LOOK_AT) {
+                Stream.of(
+                        PacketType.Play.Server.ANIMATION,
+                        PacketType.Play.Server.BLOCK_BREAK_ANIMATION,
+                        PacketType.Play.Server.ENTITY_SOUND,
+                        PacketType.Play.Server.NAMED_SOUND_EFFECT,
+                        PacketType.Play.Server.WORLD_PARTICLES,
+                        PacketType.Play.Server.EXPLOSION,
+                        PacketType.Play.Server.UPDATE_TIME,
+                        PacketType.Play.Server.ENTITY_HEAD_ROTATION,
+                        PacketType.Play.Server.HURT_ANIMATION,
+                        PacketType.Play.Server.DAMAGE_EVENT,
+                        PacketType.Play.Server.ENTITY_LOOK,
+                        PacketType.Play.Server.REL_ENTITY_MOVE,
+                        PacketType.Play.Server.REL_ENTITY_MOVE_LOOK,
+                        PacketType.Play.Server.SPAWN_ENTITY_EXPERIENCE_ORB,
+                        PacketType.Play.Server.VEHICLE_MOVE,
+                        PacketType.Play.Server.BLOCK_ACTION,
+                        PacketType.Play.Server.LIGHT_UPDATE,
+                        PacketType.Play.Server.LOOK_AT,
+                        PacketType.Play.Server.PLAYER_LIST_HEADER_FOOTER,
+                        PacketType.Play.Server.WORLD_EVENT,
+                        PacketType.Play.Server.COLLECT,
+                        PacketType.Play.Server.WINDOW_ITEMS,
+                        PacketType.Play.Server.CUSTOM_SOUND_EFFECT,
+                        PacketType.Play.Server.SET_SLOT).filter(PacketType::isSupported).collect(Collectors.toList()), ListenerOptions.ASYNC) {
             @Override
             public void onPacketSending(PacketEvent event) {
                 UUID uuid = event.getPlayer().getUniqueId();
@@ -74,26 +135,50 @@ public final class RIABandwidthSaver extends JavaPlugin implements Listener {
                         return;
                     }
                 }
+                if (type == PacketType.Play.Server.SET_SLOT) {
+                    Byte windowId = event.getPacket().getBytes().readSafely(0);
+                    if (windowId != null && windowId.intValue() == 0) {
+                        return;
+                    }
+                }
                 event.setCancelled(true);
+                long packetSize = getPacketSize(event.getPacket());
                 PKT_TYPE_STATS.compute(event.getPacketType(), (k, v) -> {
                     if (v == null) {
                         v = new PacketInfo();
                     }
                     v.getPktCounter().increment();
-                    v.getPktSize().add(event.getPacket().getBytes().size());
+                    v.getPktSize().add(packetSize);
                     return v;
                 });
-
-                PLAYER_PKT_SAVED_STATS.compute(event.getPlayer().getUniqueId(), (k, v) -> {
-                    if (v == null) {
-                        v = new PacketInfo();
-                    }
-                    v.getPktCounter().increment();
-                    v.getPktSize().add(event.getPacket().getBytes().size());
-                    return v;
-                });
+                if (!(event.getPlayer() instanceof TemporaryPlayer)) {
+                    PLAYER_PKT_SAVED_STATS.compute(event.getPlayer().getUniqueId(), (k, v) -> {
+                        if (v == null) {
+                            v = new PacketInfo();
+                        }
+                        v.getPktCounter().increment();
+                        v.getPktSize().add(packetSize);
+                        return v;
+                    });
+                }
             }
         });
+    }
+
+    private long getPacketSize(PacketContainer packetContainer) {
+        try {
+            ByteBuf buffer = (ByteBuf) packetContainer.serializeToBuffer();
+            if (buffer != null) {
+                long size = buffer.readableBytes();
+                ReferenceCountUtil.safeRelease(buffer);
+                return size;
+            } else {
+                return 0L;
+            }
+        } catch (Exception e) {
+            return -1L;
+        }
+
     }
 
     private void playerEcoEnable(Player player) {
@@ -112,6 +197,7 @@ public final class RIABandwidthSaver extends JavaPlugin implements Listener {
     @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
     public void onPlayerQuit(PlayerQuitEvent event) {
         PLAYER_PKT_SAVED_STATS.remove(event.getPlayer().getUniqueId());
+        UNFILTERED_PLAYER_PKT_SAVED_STATS.remove(event.getPlayer().getUniqueId());
     }
 
     @Override
@@ -132,19 +218,40 @@ public final class RIABandwidthSaver extends JavaPlugin implements Listener {
 
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
-        sender.sendMessage(ChatColor.GREEN + "🍃 ECO 节能模式 - 统计信息：");
-        long pktCancelled = PKT_TYPE_STATS.values().stream().mapToLong(r -> r.getPktCounter().longValue()).sum();
-        long pktSizeSaved = PKT_TYPE_STATS.values().stream().mapToLong(r -> r.getPktSize().longValue()).sum();
-        sender.sendMessage(ChatColor.YELLOW + "共减少发送数据包：" + ChatColor.AQUA + pktCancelled + " 个");
-        sender.sendMessage(ChatColor.YELLOW + "共减少发送数据包：" + ChatColor.AQUA + humanReadableByteCount(pktSizeSaved, false) + " （不包含视距优化的增益数据）");
-        Map<PacketType, PacketInfo> sortedPktMap = new LinkedHashMap<>();
-        Map<UUID, PacketInfo> sortedPlayerMap = new LinkedHashMap<>();
-        PKT_TYPE_STATS.entrySet().stream().sorted(Map.Entry.<PacketType, PacketInfo>comparingByValue().reversed()).forEachOrdered(e -> sortedPktMap.put(e.getKey(), e.getValue()));
-        PLAYER_PKT_SAVED_STATS.entrySet().stream().sorted(Map.Entry.<UUID, PacketInfo>comparingByValue().reversed()).forEachOrdered(e -> sortedPlayerMap.put(e.getKey(), e.getValue()));
-        sender.sendMessage(ChatColor.YELLOW + " -- 数据包类型节约 TOP 5 --");
-        sortedPktMap.entrySet().stream().limit(5).forEach(entry -> sender.sendMessage(ChatColor.GRAY + entry.getKey().name() + " - " + humanReadableByteCount(entry.getValue().getPktSize().longValue(), false)));
-        sender.sendMessage(ChatColor.YELLOW + " -- 玩家流量节约 TOP 5 --");
-        sortedPlayerMap.entrySet().stream().limit(5).forEach(entry -> sender.sendMessage(ChatColor.GRAY + Bukkit.getOfflinePlayer(entry.getKey()).getName() + " - " + humanReadableByteCount(entry.getValue().getPktSize().longValue(), false)));
+        if (args.length == 0) {
+            sender.sendMessage(ChatColor.GREEN + "🍃 ECO 节能模式 - 统计信息：");
+            long pktCancelled = PKT_TYPE_STATS.values().stream().mapToLong(r -> r.getPktCounter().longValue()).sum();
+            long pktSizeSaved = PKT_TYPE_STATS.values().stream().mapToLong(r -> r.getPktSize().longValue()).sum();
+            sender.sendMessage(ChatColor.YELLOW + "共减少发送数据包：" + ChatColor.AQUA + pktCancelled + " 个");
+            sender.sendMessage(ChatColor.YELLOW + "共减少发送数据包：" + ChatColor.AQUA + humanReadableByteCount(pktSizeSaved, false) + " （不包含视距优化的增益数据）");
+            Map<PacketType, PacketInfo> sortedPktMap = new LinkedHashMap<>();
+            Map<UUID, PacketInfo> sortedPlayerMap = new LinkedHashMap<>();
+            PKT_TYPE_STATS.entrySet().stream().sorted(Map.Entry.<PacketType, PacketInfo>comparingByValue().reversed()).forEachOrdered(e -> sortedPktMap.put(e.getKey(), e.getValue()));
+            PLAYER_PKT_SAVED_STATS.entrySet().stream().sorted(Map.Entry.<UUID, PacketInfo>comparingByValue().reversed()).forEachOrdered(e -> sortedPlayerMap.put(e.getKey(), e.getValue()));
+            sender.sendMessage(ChatColor.YELLOW + " -- 数据包类型节约 TOP 5 --");
+            sortedPktMap.entrySet().stream().limit(5).forEach(entry -> sender.sendMessage(ChatColor.GRAY + entry.getKey().name() + " - " + humanReadableByteCount(entry.getValue().getPktSize().longValue(), false)));
+            sender.sendMessage(ChatColor.YELLOW + " -- 玩家流量节约 TOP 5 --");
+            sortedPlayerMap.entrySet().stream().limit(5).forEach(entry -> sender.sendMessage(ChatColor.GRAY + Bukkit.getOfflinePlayer(entry.getKey()).getName() + " - " + humanReadableByteCount(entry.getValue().getPktSize().longValue(), false)));
+        }
+        if (args.length == 1 && args[0].equalsIgnoreCase("unfiltered")) {
+            sender.sendMessage(ChatColor.GREEN + "🍃 UN-ECO - 数据总计 - 统计信息：");
+            long pktSent = UNFILTERED_PKT_TYPE_STATS.values().stream().mapToLong(r -> r.getPktCounter().longValue()).sum();
+            long pktSize = UNFILTERED_PKT_TYPE_STATS.values().stream().mapToLong(r -> r.getPktSize().longValue()).sum();
+            sender.sendMessage(ChatColor.YELLOW + "共发送数据包：" + ChatColor.AQUA + pktSent + " 个");
+            sender.sendMessage(ChatColor.YELLOW + "共发送数据包：" + ChatColor.AQUA + humanReadableByteCount(pktSize, false));
+            Map<PacketType, PacketInfo> sortedPktMap = new LinkedHashMap<>();
+            Map<UUID, PacketInfo> sortedPlayerMap = new LinkedHashMap<>();
+            UNFILTERED_PKT_TYPE_STATS.entrySet().stream().sorted(Map.Entry.<PacketType, PacketInfo>comparingByValue().reversed()).forEachOrdered(e -> sortedPktMap.put(e.getKey(), e.getValue()));
+            UNFILTERED_PLAYER_PKT_SAVED_STATS.entrySet().stream().sorted(Map.Entry.<UUID, PacketInfo>comparingByValue().reversed()).forEachOrdered(e -> sortedPlayerMap.put(e.getKey(), e.getValue()));
+            sender.sendMessage(ChatColor.YELLOW + " -- 数据包类型 TOP 15 --");
+            sortedPktMap.entrySet().stream().limit(15).forEach(entry -> sender.sendMessage(ChatColor.GRAY + entry.getKey().name() + " - " + humanReadableByteCount(entry.getValue().getPktSize().longValue(), false)));
+            sender.sendMessage(ChatColor.YELLOW + " -- 玩家流量 TOP 5 --");
+            sortedPlayerMap.entrySet().stream().limit(5).forEach(entry -> sender.sendMessage(ChatColor.GRAY + Bukkit.getOfflinePlayer(entry.getKey()).getName() + " - " + humanReadableByteCount(entry.getValue().getPktSize().longValue(), false)));
+        }
+        if (args.length == 1 && args[0].equalsIgnoreCase("reload") && sender.hasPermission("riabandwidthsaver.reload")) {
+            reloadConfig();
+            sender.sendMessage(ChatColor.GREEN + "🍃 ECO - 配置文件已重载 - RIA.RED - Maintained by Ghost_chu");
+        }
         return true;
     }
 

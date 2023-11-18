@@ -12,7 +12,7 @@
     <name>RIABandwidthSaver</name>
 
     <properties>
-        <java.version>1.8</java.version>
+        <java.version>11</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
@@ -86,6 +86,12 @@
             <version>idontcare</version>
             <scope>system</scope>
             <systemPath>${project.basedir}/lib/CMI-9.6.8.1.jar</systemPath>
+        </dependency>
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-all</artifactId>
+            <version>4.0.23.Final</version>
+            <scope>provided</scope>
         </dependency>
     </dependencies>
 </project>
