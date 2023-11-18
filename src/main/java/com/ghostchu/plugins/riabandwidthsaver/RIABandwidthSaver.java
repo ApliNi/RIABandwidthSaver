@@ -21,8 +21,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -36,6 +35,7 @@ public final class RIABandwidthSaver extends JavaPlugin implements Listener {
     private Map<UUID, PacketInfo> UNFILTERED_PLAYER_PKT_SAVED_STATS = new ConcurrentHashMap<>();
     private final ThreadLocalRandom RANDOM = ThreadLocalRandom.current();
     private boolean calcAllPackets = false;
+    private ExecutorService EXECUTOR_SERVICE = Executors.newSingleThreadExecutor();
 
     @Override
     public void onEnable() {
@@ -67,17 +67,10 @@ public final class RIABandwidthSaver extends JavaPlugin implements Listener {
                     types, ListenerOptions.ASYNC) {
                 @Override
                 public void onPacketSending(PacketEvent event) {
-                    long packetSize = getPacketSize(event.getPacket());
-                    UNFILTERED_PKT_TYPE_STATS.compute(event.getPacketType(), (k, v) -> {
-                        if (v == null) {
-                            v = new PacketInfo();
-                        }
-                        v.getPktCounter().increment();
-                        v.getPktSize().add(packetSize);
-                        return v;
-                    });
-                    if (!(event.getPlayer() instanceof TemporaryPlayer)) {
-                        UNFILTERED_PLAYER_PKT_SAVED_STATS.compute(event.getPlayer().getUniqueId(), (k, v) -> {
+                    PacketContainer container = event.getPacket().shallowClone();
+                    CompletableFuture.runAsync(() -> {
+                        long packetSize = getPacketSize(container);
+                        UNFILTERED_PKT_TYPE_STATS.compute(event.getPacketType(), (k, v) -> {
                             if (v == null) {
                                 v = new PacketInfo();
                             }
@@ -85,7 +78,17 @@ public final class RIABandwidthSaver extends JavaPlugin implements Listener {
                             v.getPktSize().add(packetSize);
                             return v;
                         });
-                    }
+                        if (!(event.getPlayer() instanceof TemporaryPlayer)) {
+                            UNFILTERED_PLAYER_PKT_SAVED_STATS.compute(event.getPlayer().getUniqueId(), (k, v) -> {
+                                if (v == null) {
+                                    v = new PacketInfo();
+                                }
+                                v.getPktCounter().increment();
+                                v.getPktSize().add(packetSize);
+                                return v;
+                            });
+                        }
+                    }, EXECUTOR_SERVICE);
                 }
             });
         } else {
@@ -142,17 +145,10 @@ public final class RIABandwidthSaver extends JavaPlugin implements Listener {
                     }
                 }
                 event.setCancelled(true);
-                long packetSize = getPacketSize(event.getPacket());
-                PKT_TYPE_STATS.compute(event.getPacketType(), (k, v) -> {
-                    if (v == null) {
-                        v = new PacketInfo();
-                    }
-                    v.getPktCounter().increment();
-                    v.getPktSize().add(packetSize);
-                    return v;
-                });
-                if (!(event.getPlayer() instanceof TemporaryPlayer)) {
-                    PLAYER_PKT_SAVED_STATS.compute(event.getPlayer().getUniqueId(), (k, v) -> {
+                PacketContainer container = event.getPacket().shallowClone();
+                CompletableFuture.runAsync(() -> {
+                    long packetSize = getPacketSize(container);
+                    PKT_TYPE_STATS.compute(event.getPacketType(), (k, v) -> {
                         if (v == null) {
                             v = new PacketInfo();
                         }
@@ -160,7 +156,17 @@ public final class RIABandwidthSaver extends JavaPlugin implements Listener {
                         v.getPktSize().add(packetSize);
                         return v;
                     });
-                }
+                    if (!(event.getPlayer() instanceof TemporaryPlayer)) {
+                        PLAYER_PKT_SAVED_STATS.compute(event.getPlayer().getUniqueId(), (k, v) -> {
+                            if (v == null) {
+                                v = new PacketInfo();
+                            }
+                            v.getPktCounter().increment();
+                            v.getPktSize().add(packetSize);
+                            return v;
+                        });
+                    }
+                }, EXECUTOR_SERVICE);
             }
         });
     }
