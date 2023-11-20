@@ -194,15 +194,15 @@ public final class RIABandwidthSaver extends JavaPlugin implements Listener {
     }
 
     private void playerEcoDisable(Player player) {
-        player.sendMessage(ChatColor.DARK_GRAY + "🍃 ECO 节能模式已停用。");
+        AFK_PLAYERS.remove(player.getUniqueId());
         player.setSendViewDistance(-1);
         player.resetPlayerTime();
-        AFK_PLAYERS.remove(player.getUniqueId());
+        player.sendMessage(ChatColor.DARK_GRAY + "🍃 ECO 节能模式已停用。");
     }
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
     public void onPlayerQuit(PlayerQuitEvent event) {
-        AFK_PLAYERS.remove(event.getPlayer().getUniqueId());
+        playerEcoDisable(event.getPlayer());
         PLAYER_PKT_SAVED_STATS.remove(event.getPlayer().getUniqueId());
         UNFILTERED_PLAYER_PKT_SAVED_STATS.remove(event.getPlayer().getUniqueId());
     }
