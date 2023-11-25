@@ -122,6 +122,7 @@ public final class RIABandwidthSaver extends JavaPlugin implements Listener {
                         PacketType.Play.Server.COLLECT,
                         PacketType.Play.Server.WINDOW_ITEMS,
                         PacketType.Play.Server.CUSTOM_SOUND_EFFECT,
+                        PacketType.Play.Server.ENTITY_EFFECT,
                         PacketType.Play.Server.SET_SLOT).filter(PacketType::isSupported).collect(Collectors.toList()), ListenerOptions.ASYNC) {
             @Override
             public void onPacketSending(PacketEvent event) {
