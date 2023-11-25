@@ -29,7 +29,6 @@ public final class RIABandwidthSaver extends JavaPlugin implements Listener {
     private final Set<UUID> AFK_PLAYERS = new HashSet<>();
     private final Map<PacketType, PacketInfo> PKT_TYPE_STATS = new ConcurrentHashMap<>();
     private final Map<UUID, PacketInfo> PLAYER_PKT_SAVED_STATS = new ConcurrentHashMap<>();
-
     private final Map<PacketType, PacketInfo> UNFILTERED_PKT_TYPE_STATS = new ConcurrentHashMap<>();
     private final Map<UUID, PacketInfo> UNFILTERED_PLAYER_PKT_SAVED_STATS = new ConcurrentHashMap<>();
     private final ThreadLocalRandom RANDOM = ThreadLocalRandom.current();
@@ -47,13 +46,16 @@ public final class RIABandwidthSaver extends JavaPlugin implements Listener {
     }
 
     private void scanHooks() {
-        if(Bukkit.getPluginManager().isPluginEnabled("CMI")){
+        if(Bukkit.getPluginManager().getPlugin("CMI") != null){
             afkHooks.add(new CMIHook(this));
             getLogger().info("CMI AFK状态钩子已注册！");
         }
-        if(Bukkit.getPluginManager().isPluginEnabled("Essenitals") ){
+        if(Bukkit.getPluginManager().getPlugin("Essentials")  != null){
             afkHooks.add(new ESSXHook(this));
             getLogger().info("Essentials AFK状态钩子已注册！");
+        }
+        if(afkHooks.size() > 1){
+            getLogger().warning("存在多个 AFK 状态源钩子，这可能会导致问题。请只选择一个使用，并关闭其它插件的 AFK 功能以规避问题，如已关闭可忽略此提示");
         }
         if(afkHooks.isEmpty()){
             getLogger().severe("未检测到任何支持的 AFK 状态钩子，插件退出……");
