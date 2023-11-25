@@ -44,6 +44,8 @@ RIABandwidthSaver 是一个基于 ProtocolLib 的节流插件，旨在在玩家�
 ![Snipaste_2023-11-26_03-00-32](https://github.com/RIA-AED/RIABandwidthSaver/assets/30802565/35c3336e-edf9-4a54-b075-0553809de505)
 ![image](https://github.com/RIA-AED/RIABandwidthSaver/assets/30802565/a1b8c7f1-8067-4abd-b0b9-41f2da8c48a2)
 ![image](https://github.com/RIA-AED/RIABandwidthSaver/assets/30802565/2dd8e3fa-c6df-4669-a5e9-cb1c832cf2f2)
+![Snipaste_2023-11-26_03-39-45](https://github.com/RIA-AED/RIABandwidthSaver/assets/30802565/8b98d588-fc9c-485a-8ff0-c6979bf553f0)
+
 
 ## 命令
 
