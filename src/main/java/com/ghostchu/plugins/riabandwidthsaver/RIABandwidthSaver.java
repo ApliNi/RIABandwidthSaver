@@ -1,11 +1,11 @@
 package com.ghostchu.plugins.riabandwidthsaver;
 
-import com.Zrips.CMI.events.CMIAfkEnterEvent;
-import com.Zrips.CMI.events.CMIAfkLeaveEvent;
 import com.comphenix.protocol.PacketType;
 import com.comphenix.protocol.ProtocolLibrary;
 import com.comphenix.protocol.events.*;
 import com.comphenix.protocol.injector.temporary.TemporaryPlayer;
+import com.ghostchu.plugins.riabandwidthsaver.hooks.cmi.CMIHook;
+import com.ghostchu.plugins.riabandwidthsaver.hooks.essx.ESSXHook;
 import io.netty.buffer.ByteBuf;
 import io.netty.util.ReferenceCountUtil;
 import org.bukkit.Bukkit;
@@ -26,16 +26,16 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public final class RIABandwidthSaver extends JavaPlugin implements Listener {
+    private final Set<UUID> AFK_PLAYERS = new HashSet<>();
+    private final Map<PacketType, PacketInfo> PKT_TYPE_STATS = new ConcurrentHashMap<>();
+    private final Map<UUID, PacketInfo> PLAYER_PKT_SAVED_STATS = new ConcurrentHashMap<>();
 
-    private Set<UUID> AFK_PLAYERS = new HashSet<>();
-    private Map<PacketType, PacketInfo> PKT_TYPE_STATS = new ConcurrentHashMap<>();
-    private Map<UUID, PacketInfo> PLAYER_PKT_SAVED_STATS = new ConcurrentHashMap<>();
-
-    private Map<PacketType, PacketInfo> UNFILTERED_PKT_TYPE_STATS = new ConcurrentHashMap<>();
-    private Map<UUID, PacketInfo> UNFILTERED_PLAYER_PKT_SAVED_STATS = new ConcurrentHashMap<>();
+    private final Map<PacketType, PacketInfo> UNFILTERED_PKT_TYPE_STATS = new ConcurrentHashMap<>();
+    private final Map<UUID, PacketInfo> UNFILTERED_PLAYER_PKT_SAVED_STATS = new ConcurrentHashMap<>();
     private final ThreadLocalRandom RANDOM = ThreadLocalRandom.current();
     private boolean calcAllPackets = false;
-    private ExecutorService EXECUTOR_SERVICE = Executors.newSingleThreadExecutor();
+    private final ExecutorService EXECUTOR_SERVICE = Executors.newSingleThreadExecutor();
+    private final List<AFKHook> afkHooks = new ArrayList<>();
 
     @Override
     public void onEnable() {
@@ -43,6 +43,22 @@ public final class RIABandwidthSaver extends JavaPlugin implements Listener {
         saveDefaultConfig();
         Bukkit.getPluginManager().registerEvents(this, this);
         reloadConfig();
+        scanHooks();
+    }
+
+    private void scanHooks() {
+        if(Bukkit.getPluginManager().isPluginEnabled("CMI")){
+            afkHooks.add(new CMIHook(this));
+            getLogger().info("CMI AFK状态钩子已注册！");
+        }
+        if(Bukkit.getPluginManager().isPluginEnabled("Essenitals") ){
+            afkHooks.add(new ESSXHook(this));
+            getLogger().info("Essentials AFK状态钩子已注册！");
+        }
+        if(afkHooks.isEmpty()){
+            getLogger().severe("未检测到任何支持的 AFK 状态钩子，插件退出……");
+            Bukkit.getPluginManager().disablePlugin(this);
+        }
     }
 
     @Override
@@ -185,13 +201,13 @@ public final class RIABandwidthSaver extends JavaPlugin implements Listener {
 
     }
 
-    private void playerEcoEnable(Player player) {
+    public void playerEcoEnable(Player player) {
         player.sendMessage(ChatColor.GREEN + "🍃 ECO 节能模式已启用，游戏世界更新可能会延迟。");
         player.setSendViewDistance(2);
         AFK_PLAYERS.add(player.getUniqueId());
     }
 
-    private void playerEcoDisable(Player player) {
+    public void playerEcoDisable(Player player) {
         AFK_PLAYERS.remove(player.getUniqueId());
         player.setSendViewDistance(-1);
         player.resetPlayerTime();
@@ -211,15 +227,7 @@ public final class RIABandwidthSaver extends JavaPlugin implements Listener {
         ProtocolLibrary.getProtocolManager().removePacketListeners(this);
     }
 
-    @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
-    public void onPlayerAfk(CMIAfkEnterEvent event) {
-        playerEcoEnable(event.getPlayer());
-    }
 
-    @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
-    public void onPlayerLeaveAfk(CMIAfkLeaveEvent event) {
-        playerEcoDisable(event.getPlayer());
-    }
 
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
