@@ -1,0 +1,2 @@
+# 计算所有数据包（即启用 /riabandwidthsaver unfiltered 的统计信息）
+calcAllPackets: true
